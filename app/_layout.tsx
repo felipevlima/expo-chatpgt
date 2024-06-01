@@ -1,36 +1,99 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { Ionicons } from "@expo/vector-icons";
+import { Slot, SplashScreen, Stack, useRouter, useSegments, } from "expo-router";
+import { ActivityIndicator, TouchableOpacity, View } from "react-native";
+import { ClerkProvider, useAuth } from '@clerk/clerk-expo'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import * as SecureStore from 'expo-secure-store'
+import { useFonts } from "expo-font";
+import { useEffect } from "react";
 
-import { useColorScheme } from '@/hooks/useColorScheme';
+const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY as string
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
+const tokenCache = {
+  async getToken(key: string) {
+    try {
+      return SecureStore.getItemAsync(key)
+    } catch(err) {
+      return null
+    }
+  },
 
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
+  async saveToken(key: string, value: string) {
+    try {
+      return SecureStore.setItemAsync(key, value)
+    } catch(err) {
+      return;
+    }
+  }
+}
+
+SplashScreen.preventAutoHideAsync()
+
+const InitialLayout = () => {
+  const [loaded, error] = useFonts({
+    SpaceMono: require('@/assets/fonts/SpaceMono-Regular.ttf'),
+  })
+
+  const router = useRouter()
+  const { isLoaded, isSignedIn } = useAuth()
+  const segments = useSegments()
+
+  useEffect(() => {
+    if (error) throw error
+  }, [error])
 
   useEffect(() => {
     if (loaded) {
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync()
     }
-  }, [loaded]);
+  }, [loaded])
 
-  if (!loaded) {
-    return null;
+  useEffect(() => {
+    if(!isLoaded) return 
+    const inAuthGroup = segments[0] === '(auth)'
+
+    if (isSignedIn && !inAuthGroup) {
+      router.replace('/(auth)/(drawer)/(chat)/new')
+    } else if (!isSignedIn && inAuthGroup) {
+      router.replace('/')
+    }
+  }, [isSignedIn ])
+
+  if (!loaded || !isLoaded) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color="#000"/>
+      </View>
+    )
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-    </ThemeProvider>
+    <Stack>
+      <Stack.Screen name="index" options={{
+        headerShown: false,
+      }}/>
+      <Stack.Screen name="login" options={{
+        presentation: 'modal',
+        title: '',
+        headerLeft: () => (
+          <TouchableOpacity onPress={() => router.back()}>
+            <Ionicons name="close-outline" size={28}/>
+          </TouchableOpacity>
+        )
+      }} />
+      <Stack.Screen name="(auth)" options={{ headerShown: false }}/>
+    </Stack>
   );
 }
+
+const RootLayout = () => {
+  return (
+    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
+      <GestureHandlerRootView>
+        <InitialLayout />
+      </GestureHandlerRootView>
+    </ClerkProvider>
+  )
+}
+
+export default RootLayout
